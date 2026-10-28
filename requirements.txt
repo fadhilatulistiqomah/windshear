@@ -1,0 +1,11 @@
+numpy>=1.24
+wradlib>=2.0
+netCDF4>=1.6
+scipy>=1.10
+xarray>=2023.1
+pandas>=2.0
+matplotlib>=3.7
+opencv-python-headless>=4.8
+openpyxl>=3.1
+xlrd>=2.0
+streamlit>=1.40
