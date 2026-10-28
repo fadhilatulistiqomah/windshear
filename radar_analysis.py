@@ -6,12 +6,16 @@ import re
 import base64
 import contextlib
 import io
+import os
 from pathlib import Path
 
 import numpy as np
 import wradlib.io as wio
 
-DEFAULT_DATA = Path("/Users/aliwardhana/Downloads/Training_TL/00_data/Radar/2025-03-07")
+DEFAULT_DATA = Path(os.environ.get(
+    "TRAINING_TL_DATA",
+    Path(__file__).resolve().parent / "data" / "radar" / "2025-03-07",
+)).expanduser()
 RADAR_LON, RADAR_LAT = 112.760422, -7.410306
 RWY10_LON, RWY10_LAT = 112.773492, -7.377669
 RWY28_LON, RWY28_LAT = 112.800269, -7.382014

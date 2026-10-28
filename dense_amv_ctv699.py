@@ -56,6 +56,8 @@ import warnings
 import io
 import base64
 import contextlib
+import os
+import threading
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -84,13 +86,15 @@ START_UTC = "0700"
 END_UTC = "0800"
 INTERVAL_MIN = 10
 
-INPUT_DIR = Path(
-    "/Users/aliwardhana/Downloads/Training_TL/00_data/Himawari_9/20250307"
-)
-OUTPUT_DIR = Path(
-    "/Users/aliwardhana/Downloads/Training_TL/01_output/Himawari_9/CTV699_20250307_Dense_AMV"
-)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+REPO_ROOT = Path(__file__).resolve().parent
+INPUT_DIR = Path(os.environ.get(
+    "HIMAWARI_INPUT_DIR", REPO_ROOT / "data" / "himawari" / DATE
+)).expanduser()
+OUTPUT_DIR = Path(os.environ.get(
+    "WINDSHEAR_OUTPUT_DIR",
+    REPO_ROOT / "outputs" / "Himawari_9" / "CTV699_20250307_Dense_AMV",
+)).expanduser()
+OUTPUT_LOCK = threading.Lock()
 
 # CTV699 / Juanda domain
 LON_MIN, LON_MAX = 112.0, 113.5
@@ -131,12 +135,12 @@ RWY10_HEADING_DEG = 99.3
 RWY28_HEADING_DEG = 279.3
 
 # Optional local GIS files. If missing, the script continues.
-KKOP_GEOJSON = Path(
-    "/Users/aliwardhana/Downloads/Training_TL/00_data/KKOP/kkop.geojson"
-)
-MAP_CACHE_DIR = Path(
-    "/Users/aliwardhana/Downloads/Training_TL/01_output/Radar/_map_cache"
-)
+KKOP_GEOJSON = Path(os.environ.get(
+    "KKOP_GEOJSON", REPO_ROOT / "data" / "KKOP" / "kkop.geojson"
+)).expanduser()
+MAP_CACHE_DIR = Path(os.environ.get(
+    "WINDSHEAR_MAP_CACHE_DIR", REPO_ROOT / "data" / "map_cache"
+)).expanduser()
 COASTLINE_SHP = MAP_CACHE_DIR / "ne_10m_ocean" / "ne_10m_ocean.shp"
 GADM1_SHP = MAP_CACHE_DIR / "gadm41_IDN" / "gadm41_IDN_1.shp"
 GADM2_SHP = MAP_CACHE_DIR / "gadm41_IDN" / "gadm41_IDN_2.shp"
@@ -959,6 +963,7 @@ def plot_qc_diagnostics(result: dict, t_mid: datetime):
 # =============================================================================
 
 def main():
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     print("=" * 78)
     print("HIMAWARI-9 DENSE GRID CMV / AMV-LIKE ANALYSIS — CTV699")
     print("=" * 78)
@@ -1086,35 +1091,42 @@ def process_uploaded_sequence(files, output_dir=None):
         if any(gap != INTERVAL_MIN for gap in gaps):
             raise ValueError("Dense CTV699 motion requires scenes at exact 10-minute intervals with no gaps.")
         data = {timestamp:read_subset(path) for timestamp,path in parsed}
-        old_output = OUTPUT_DIR
-        if output_dir:
-            OUTPUT_DIR = Path(output_dir).expanduser().resolve()
-            OUTPUT_DIR.mkdir(parents=True,exist_ok=True)
         products=[]
-        try:
-            for index in range(1,len(times)-1):
-                previous,mid,next_time=times[index-1:index+2]
-                result=process_triplet(previous,mid,next_time,data[previous],data[mid],data[next_time])
-                csv_path=save_csv(result,mid)
-                nc_path=save_netcdf(result,mid)
-                speed_path=plot_speed(result,mid)
-                direction_path=plot_direction(result,mid)
-                qc_path=plot_qc_diagnostics(result,mid)
-                q=result["quality"]; valid=q>0; speeds=result["speed"][valid]
-                summary={"time_utc":mid.strftime("%Y-%m-%dT%H:%M:%SZ"),"valid_vectors":int(valid.sum()),
-                         "good_vectors":int((q==2).sum()),"deep_cloud_vectors":int((result["deep_flag"]&valid).sum()),
-                         "mean_speed_m_s":float(np.nanmean(speeds)) if speeds.size else None,
-                         "max_speed_m_s":float(np.nanmax(speeds)) if speeds.size else None}
-                summary_path=OUTPUT_DIR/f"CTV699_Dense_CMV_Summary_{times[0]:%Y%m%d_%H%M}_{times[-1]:%H%M}.csv"
-                pd.DataFrame([summary]).to_csv(summary_path,index=False)
-                def image(path):
-                    return base64.b64encode(Path(path).read_bytes()).decode("ascii")
-                products.append({**summary,"files":{"csv":csv_path.name,"netcdf":nc_path.name,"speed_png":speed_path.name,
-                    "direction_png":direction_path.name,"qc_png":qc_path.name,"summary_csv":summary_path.name},
-                    "speed_png_base64":image(speed_path),"direction_png_base64":image(direction_path),
-                    "qc_png_base64":image(qc_path)})
-        finally:
-            OUTPUT_DIR=old_output
+        with OUTPUT_LOCK:
+            old_output = OUTPUT_DIR
+            temporary_output = None
+            try:
+                if output_dir:
+                    OUTPUT_DIR = Path(output_dir).expanduser().resolve()
+                else:
+                    temporary_output = tempfile.TemporaryDirectory(prefix="windshear-output-")
+                    OUTPUT_DIR = Path(temporary_output.name)
+                OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+                for index in range(1,len(times)-1):
+                    previous,mid,next_time=times[index-1:index+2]
+                    result=process_triplet(previous,mid,next_time,data[previous],data[mid],data[next_time])
+                    csv_path=save_csv(result,mid)
+                    nc_path=save_netcdf(result,mid)
+                    speed_path=plot_speed(result,mid)
+                    direction_path=plot_direction(result,mid)
+                    qc_path=plot_qc_diagnostics(result,mid)
+                    q=result["quality"]; valid=q>0; speeds=result["speed"][valid]
+                    summary={"time_utc":mid.strftime("%Y-%m-%dT%H:%M:%SZ"),"valid_vectors":int(valid.sum()),
+                             "good_vectors":int((q==2).sum()),"deep_cloud_vectors":int((result["deep_flag"]&valid).sum()),
+                             "mean_speed_m_s":float(np.nanmean(speeds)) if speeds.size else None,
+                             "max_speed_m_s":float(np.nanmax(speeds)) if speeds.size else None}
+                    summary_path=OUTPUT_DIR/f"CTV699_Dense_CMV_Summary_{times[0]:%Y%m%d_%H%M}_{times[-1]:%H%M}.csv"
+                    pd.DataFrame([summary]).to_csv(summary_path,index=False)
+                    def image(path):
+                        return base64.b64encode(Path(path).read_bytes()).decode("ascii")
+                    products.append({**summary,"files":{"csv":csv_path.name,"netcdf":nc_path.name,"speed_png":speed_path.name,
+                        "direction_png":direction_path.name,"qc_png":qc_path.name,"summary_csv":summary_path.name},
+                        "speed_png_base64":image(speed_path),"direction_png_base64":image(direction_path),
+                        "qc_png_base64":image(qc_path)})
+            finally:
+                OUTPUT_DIR = old_output
+                if temporary_output is not None:
+                    temporary_output.cleanup()
         return {"files":[Path(name).name for name,_ in files],"scenes":len(times),"central_times":len(products),
                 "products":products,"output_dir":str(Path(output_dir).expanduser().resolve()) if output_dir else None,
                 "caveat":"Research-only dense cloud-motion-vector approximation adapted from the supplied CTV699 script. These are apparent cloud-feature motions, not official JMA AMVs or validated winds; no cloud-height assignment, parallax correction, full JMA QC or sonde validation. Not for operational decisions."}

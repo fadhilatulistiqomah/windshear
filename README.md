@@ -2,27 +2,27 @@
 
 A local prototype for drafting advisory windshear assessments from manually entered observations and uploaded files. It uses an OpenAI-compatible chat-completions API; it does **not** provide live alerts.
 
-## Run
+## Run with Streamlit
 
-Requires Python 3.9+, `pip install -r requirements.txt`, and an API key for a compatible model provider:
+Requires Python 3.9+ and the packages in `requirements.txt`:
 
 ```sh
-cd windshear_agent
-export OPENAI_API_KEY="your-api-key"
-# Optional; defaults to OpenAI-compatible defaults shown below
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-export OPENAI_MODEL="gpt-4o-mini"
-python3 app.py
+pip install -r requirements.txt
+streamlit run streamlit_app.py
 ```
 
-Open <http://localhost:8080>. Set `PORT` to use another port. For the OpenAI-compatible provider configured in the parent `opencode.json`, use its base URL and an appropriate model ID with `OPENAI_BASE_URL` and `OPENAI_MODEL`; provide the key only through the environment. The observations typed into the app are sent to that configured provider for analysis.
+To deploy on Streamlit Community Cloud, connect this GitHub repository and set `streamlit_app.py` as the app's main file.
+
+The app's upload workflows do not depend on files from a developer's computer. Optional local batch-analysis data defaults to folders under this repository: `data/radar/2025-03-07`, `data/himawari/20250307`, `data/KKOP/kkop.geojson`, and `data/map_cache`. Add the corresponding files to the repository if you want them bundled with a deployment, or set `WINDSHEAR_DATA_DIR`, `TRAINING_TL_DATA`, `HIMAWARI_INPUT_DIR`, `KKOP_GEOJSON`, and `WINDSHEAR_MAP_CACHE_DIR` to server-side paths. Generated batch outputs default to `outputs/`; set `WINDSHEAR_OUTPUT_DIR` to change that location. Uploaded dense-motion results are temporary unless an output folder is explicitly provided.
+
+The separate prototype HTTP server remains available with `python3 app.py` on port 8080. For its OpenAI-compatible model integration, configure `OPENAI_API_KEY` and, optionally, `OPENAI_BASE_URL` and `OPENAI_MODEL` through the server environment.
 
 ## Current upload support (prototype)
 
 - METAR/SPECI-like text: partial extraction of wind, visibility, temperature/dewpoint and QNH groups; the original report is retained as context.
 - CSV: column names, row count and first 30 rows are passed as context (may include sensitive or irrelevant data; inspect before upload).
 - Rainbow `.vol`: uses `wradlib` to inspect sweeps and moment metadata. This prototype does not yet apply the project-specific Rainbow scaling, quality masks, geo-referencing, or windshear calculations, so the result is only a file/moment inventory—not measured radar evidence.
-- Local case analysis: reads timestamped files under `/Users/aliwardhana/Downloads/Training_TL/00_data/Radar/2025-03-07`, pairs the available Rainbow moment files, applies Rainbow min/max/depth scaling and summarizes the 0–10 km extended RWY10 final corridor at 0.4°, 0.8°, and 1.8°. It applies SNR/SQI/RhoHV masks only when those matching moment files are available. Radial-velocity spread is explicitly not interpreted as runway headwind or as a standalone microburst decision.
+- Local case analysis: reads timestamped files under `data/radar/2025-03-07` by default (or `TRAINING_TL_DATA`), pairs available Rainbow moment files, applies Rainbow min/max/depth scaling and summarizes the 0–10 km extended RWY10 final corridor at 0.4°, 0.8°, and 1.8°. It applies SNR/SQI/RhoHV masks only when those matching moment files are available. Radial-velocity spread is explicitly not interpreted as runway headwind or as a standalone microburst decision.
 - NPZ: small numeric arrays are reduced to shape/range summaries; this is not a substitute for decoding the source radar volume.
 - Images (PNG/JPEG/WebP/TIFF): attached for qualitative review if the chosen model supports vision. Do not expect scientific Himawari retrievals, calibrated cloud-top temperatures or wind derivation from images.
 - Text files: passed as text with light METAR/SPECI-like group extraction. PIREP and radiosonde interpretation is not yet a validated parser.

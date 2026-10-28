@@ -272,14 +272,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/radar":
             try:
-                from radar_analysis import analyze_case
+                from radar_analysis import DEFAULT_DATA, analyze_case
                 length = int(self.headers.get("Content-Length", "0"))
                 if length > 4096:
                     self.send_json(413, {"error": "Radar analysis request is too large."})
                     return
                 data = json.loads(self.rfile.read(length) or b"{}")
                 result = analyze_case(
-                    data.get("data_dir", os.environ.get("TRAINING_TL_DATA", "/Users/aliwardhana/Downloads/Training_TL/00_data/Radar/2025-03-07")),
+                    data.get("data_dir", DEFAULT_DATA),
                     data.get("start", "20250307070000"),
                     data.get("end", "20250307080000"),
                 )

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 from pathlib import Path
 
@@ -20,8 +21,14 @@ import numpy as np
 import wradlib.io as wio
 
 RADAR_LON, RADAR_LAT = 112.760422, -7.410306
-TRAINING_ROOT = Path("/Users/aliwardhana/Downloads/Training_TL")
-KKOP_GEOJSON = TRAINING_ROOT / "00_data/KKOP/kkop.geojson"
+REPO_ROOT = Path(__file__).resolve().parent
+DATA_ROOT = Path(os.environ.get("WINDSHEAR_DATA_DIR", REPO_ROOT / "data")).expanduser()
+RADAR_DATA_DIR = Path(os.environ.get(
+    "TRAINING_TL_DATA", DATA_ROOT / "radar" / "2025-03-07"
+)).expanduser()
+KKOP_GEOJSON = Path(os.environ.get(
+    "KKOP_GEOJSON", DATA_ROOT / "KKOP" / "kkop.geojson"
+)).expanduser()
 
 
 def as_list(value):
@@ -125,7 +132,9 @@ def display(path: Path, sweep_number: int | None = None, save: Path | None = Non
 def add_map_context(ax):
     """Plot geographic context, including the Juanda KKOP overlay."""
     bounds = (112.1, 113.25, -8.15, -6.8)
-    cache = TRAINING_ROOT / "01_output/Radar/CTV699_20250307/_map_cache"
+    cache = Path(os.environ.get(
+        "WINDSHEAR_MAP_CACHE_DIR", DATA_ROOT / "map_cache"
+    )).expanduser()
     try:
         ocean_path = cache / "ne_10m_ocean/ne_10m_ocean.shp"
         if ocean_path.exists():
@@ -276,7 +285,7 @@ def main():
             root.withdraw()
             chosen = filedialog.askopenfilename(
                 title="Choose a Rainbow weather radar volume",
-                initialdir=str(TRAINING_ROOT / "00_data/Radar"),
+                initialdir=str(RADAR_DATA_DIR.parent),
                 filetypes=[("Rainbow radar volumes", "*.vol"), ("All files", "*.*")],
             )
             root.destroy()
